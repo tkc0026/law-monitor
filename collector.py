@@ -87,6 +87,25 @@ def find_rows(obj):
     return best
 
 
+DIAG = []  # 소스별 응답 진단 기록 (실행 로그에 출력)
+
+
+def find_key(o, key):
+    if isinstance(o, dict):
+        if key in o:
+            return o[key]
+        for v in o.values():
+            r = find_key(v, key)
+            if r is not None:
+                return r
+    elif isinstance(o, list):
+        for v in o:
+            r = find_key(v, key)
+            if r is not None:
+                return r
+    return None
+
+
 def law_api(target, **params):
     if not OC:
         raise RuntimeError("LAW_OC(법제처 Open API 인증키)가 설정되지 않았습니다")
@@ -94,10 +113,21 @@ def law_api(target, **params):
     url = f"{BASE}/lawSearch.do?" + urllib.parse.urlencode(q)
     text = http_get(url)
     try:
-        return json.loads(text)
+        data = json.loads(text)
     except json.JSONDecodeError:
         snippet = mask(text[:160].replace("\n", " "))
         raise RuntimeError(f"JSON이 아닌 응답(인증키 또는 서버 IP 등록 문제 가능): {snippet}")
+    rows = find_rows(data)
+    total = find_key(data, "totalCnt")
+    line = f"[{target}] 검색어={params.get('query')} 전체={total} 해석된행={len(rows)}"
+    if not rows:
+        snippet = mask(json.dumps(data, ensure_ascii=False)[:300])
+        DIAG.append(line + f" 응답={snippet}")
+        if str(total) not in ("0", "00"):
+            raise RuntimeError(f"결과를 해석하지 못했습니다: {snippet}")
+    else:
+        DIAG.append(line + f" 첫행키={list(rows[0].keys())[:8]}")
+    return data
 
 
 def law_page(title):
@@ -368,6 +398,9 @@ def main():
             print(f"{'실패' if n is None else '정상'}  {label}" + ("" if n is None else f"  ({n}건)"))
         for e in errors:
             print("  -", e)
+        print("--- 진단 ---")
+        for d in DIAG:
+            print(d)
         sys.exit(1 if errors else 0)
 
     DOCS.mkdir(exist_ok=True)
@@ -378,6 +411,9 @@ def main():
     print(f"수집 {len(items)}건, 누적 {len(merged)}건, 오류 {len(errors)}건" + (f", 초안 {draft.name}" if draft else ""))
     for e in errors:
         print("  -", e)
+    print("--- 진단 ---")
+    for d in DIAG:
+        print(d)
     # 모든 소스가 실패한 경우에만 실패 처리 (일부 실패는 대시보드 하단에 표시)
     if errors and not items:
         sys.exit(1)
