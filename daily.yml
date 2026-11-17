@@ -1,0 +1,29 @@
+name: 법령 이슈 수집
+
+on:
+  schedule:
+    - cron: "0 21 * * *"   # 매일 한국시간 06:00
+  workflow_dispatch:        # Actions 탭에서 수동 실행
+
+permissions:
+  contents: write
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 수집 및 대시보드 생성
+        env:
+          LAW_OC: ${{ secrets.LAW_OC }}
+        run: python collector.py
+      - name: 변경분 저장
+        run: |
+          git config user.name "law-monitor-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add docs
+          git diff --staged --quiet || git commit -m "update $(date -u +%F)"
+          git push
